@@ -1,0 +1,97 @@
+<div id="container">
+  <div id="graph-container">
+    <% if @message %>
+      <h1 id="message"><%= @message %></h1>
+    <% end %>
+  </div>
+  <div id="title">
+    <h1>Related Company Viewer</h1>
+    <ul>
+      <li><a href="javascript:linkToAbout();">about</a></li>
+      <li><a href="javascript:linkToCredits();" class="last">credits</a></li>
+    </ul>
+
+    <div id="search">
+      <form action="/" method="get">
+        <input type="search" placeholder="Search a UK company number" name="query">
+        <button title="Search" value="go">Search</button>
+      </form>
+    </div>
+    <p>See which companies share addresses or officers.</p>
+  </div>
+
+  <div id="examples">
+    <h3>Examples</h3>
+    <ul>
+      <li><a href="/?query=OC325737">Larkdale LLP</a></li>
+      <li><a href="/?query=OC331120">Alliance Boots PropCo A LLP</a></li>
+      <li><a class="last" href="/?query=05259222&foo=true">MODERN SCHOOLS (BARNSLEY) HOLDINGS LIMITED</a></li>
+    </ul>
+    <p>Made by <a target="_blank" href="https://twitter.com/xavriley">@xavriley</a> using the <a target="_blank" href="https://opencorporates.com">@opencorporates</a> API</p>
+  </div>
+
+  <div id="info-panel">
+    <iframe id="info-frame" src="/about" height="100%" width="100%" frameborder="0"></iframe>
+  </div>
+</div>
+<script src="/js/sigma.js/plugins/sigma.parsers.json/sigma.parsers.json.js"></script>
+<script src="/js/sigma.js/plugins/sigma.layout.forceAtlas2/worker.js"></script>
+<script src="/js/sigma.js/plugins/sigma.layout.forceAtlas2/supervisor.js"></script>
+<!-- script src="/js/sigma.js/plugins/sigma.plugins.animate/sigma.plugins.animate.js"></script -->
+<script src="/js/sigma.js/plugins/sigma.plugins.dragNodes/sigma.plugins.dragNodes.js"></script>
+<script>
+/**
+ * Just a simple example to show how to use the sigma.layout.forceAtlas2
+ * plugin:
+ *
+ * A random graph is generated, such that its nodes are separated in some
+ * distinct clusters. Each cluster has its own color, and the density of
+ * links is stronger inside the clusters. So, we expect the algorithm to
+ * regroup the nodes of each cluster.
+ */
+sigma.renderers.def = sigma.renderers.canvas
+s = sigma.parsers.json('/json/<%= @id %>', {
+  container: 'graph-container',
+  settings: {
+    drawEdges: true,
+    drawLabels: true,
+    minNodeSize: 1,
+    maxNodeSize: 20,
+    batchEdgesDrawing: true,
+    labelThreshold: 18,
+    sideMargin: 4,
+    edgeColor: "default",
+    defaultEdgeColor: "#bbb"
+  }
+  }, function(s) {
+  s.bind('clickNode', function(e) {
+      document.getElementById('info-frame').src = e.data.node.opencorporates_url;
+    });
+
+  // Start the ForceAtlas2 algorithm:
+  s.startForceAtlas2({
+    //slowDown: 3,
+    linLogMode: false,
+    adjustSizes: true,
+    strongGravityMode: true
+  });
+
+  setTimeout(function() {
+    s.killForceAtlas2();
+
+    <%# sigma.plugins.animate( %>
+    <%#   s, %>
+    <%#     { %>
+    <%#       x: 'circular_x', %>
+    <%#       y: 'circular_y', %>
+    <%#       size: 'circular_size', %>
+    <%#       color: 'color' %>
+    <%#     } %>
+    <%#   ); %>
+
+    //not compatible with WebGL
+    sigma.plugins.dragNodes(s, s.renderers[0]);
+  }, 30000);
+
+});
+</script>
