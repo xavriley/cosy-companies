@@ -3,6 +3,7 @@ require 'sinatra'
 require 'rack/cache'
 require 'dalli'
 require 'typhoeus'
+require 'csv'
 
 if memcachier_servers = ENV["MEMCACHIER_SERVERS"]
   @cache = Dalli::Client.new(memcachier_servers.split(','), {
@@ -46,7 +47,11 @@ before do
 end
 
 def get_address(company_results)
-  company_results["results"]["company"]["registered_address_in_full"]
+  if address = company_results["results"]["company"]["registered_address_in_full"]
+    address
+  elsif address = company_results["results"]["company"]["data"]["most_recent"].select {|datum| datum["data_type"] == "CompanyAddress" }.first
+    address["description"] 
+  end
 end
 
 def get_officer_names(company_results)
@@ -64,8 +69,9 @@ def queue_get(url)
 end
 
 def get_company(url_or_id)
-  id = url_or_id.gsub(/https?:\/\/opencorporates\.com\/companies\/gb\//, '')
+  id = url_or_id.gsub(/https?:\/\/opencorporates\.com\/companies\/gb\//, '').strip
   url = "http://api.opencorporates.com/companies/gb/#{id}?api_token=#{@api_key}"
+  $stderr.puts url
   body = Typhoeus::Request.get(url).body
   JSON.parse(body)
 end
@@ -74,24 +80,20 @@ def coord_from_name(name)
   Digest::MD5.hexdigest(name)[/\d{,1}/].to_i
 end
 
-get '/' do
-  @id = params[:query] ||"OC325892"
-  erb :index
-end
-
-get '/json/:company_number' do
-  root_company = get_company(params[:company_number])
+def nodes_and_edges_for_company(company_number)
+  root_company = get_company(company_number)
 
   rc_name = get_name(root_company)
   rc_address = get_address(root_company)
   rc_officer_names = get_officer_names(root_company)
 
-  rc_postcode = rc_address.split(/[,\n]+/).map(&:strip).select {|line|
+  rc_postcode = rc_address.to_s.split(/[,\n]+/).map(&:strip).select {|line|
     line[/\A[A-Z0-9]{2,4}\s[A-Z0-9]{2,4}\Z/]
   }.first
 
   if rc_postcode.to_s.empty?
-    return "WARNING: postcode not found #{rc_address}"
+    $stderr.puts "WARNING: postcode not found #{rc_address}"
+    return [[], []]
   end
 
   candidate_companies_query = JSON.parse(Typhoeus::Request.get("https://api.opencorporates.com/companies/search?api_token=#{@api_key}&jurisdiction_code=gb&per_page=100&q=#{URI.encode(rc_postcode)}").body)
@@ -101,17 +103,18 @@ get '/json/:company_number' do
   nodes << {id: rc_name, 
             label: rc_name,
             size: 3,
-            color: "rgb(125,125,255)",
-            registered_address_in_full: rc_address,
+            color: "125,125,225",
+            type: "related_company",
             opencorporates_url: root_company["results"]["company"]["opencorporates_url"]
         }
 
   # add root company and postcode
   nodes << {id: rc_postcode, 
             label: rc_postcode,
-            type: "postcode",
             size: 5,
-            color: "rgb(125,255,125)"
+            color: "125,255,125",
+            type: "postcode",
+            opencorporates_url: ""
         }
   edges << {id: Digest::MD5.hexdigest(rc_name + rc_postcode), source: rc_name, target: rc_postcode, label: "registered at"}
   
@@ -119,9 +122,10 @@ get '/json/:company_number' do
   rc_officer_names.each do |oname|
     nodes << {id: "#{oname} (officer)", 
               label: oname,
-              type: "officer",
               size: 2,
-              color: "rgb(255,125,125)"
+              color: "255,125,125",
+              type: "officer",
+              opencorporates_url: ""
               }
     edges << {id: Digest::MD5.hexdigest(oname + rc_name), source: "#{oname} (officer)", target: rc_name, label: "officer of"}
   end
@@ -145,48 +149,152 @@ get '/json/:company_number' do
       c_address = get_address(c_full)
       c_officers = get_officer_names(c_full)
 
-      # add the company anyway
-      mc_name = c_full["results"]["company"]["name"]
-      mc_address = c_full["results"]["company"]["registered_address_in_full"]
-      nodes << {id: mc_name, 
-                label: mc_name,
-                type: "company",
-                size: 1,
-                color: "rgb(125,125,255)",
-                registered_address_in_full: mc_address,
-                opencorporates_url: c_full["results"]["company"]["opencorporates_url"]}
-
-      # add candidate officers
-      c_officers.each do |oname|
-        nodes << {id: "#{oname} (officer)", 
-                  label: oname,
-                  type: "officer",
-                  size: 2,
-                  color: "rgb(255,125,125)"
-                  }
-        edges << {id: Digest::MD5.hexdigest(oname + mc_name), source: "#{oname} (officer)", target: mc_name, label: "officer of"}
-      end
-
 
       matching_officers = rc_officer_names & c_officers
-      matching_officers.each do |oname|
-        edges << {id: Digest::MD5.hexdigest(oname + rc_name), source: "#{oname} (officer)", target: rc_name, label: "officer of"}
+      if !matching_officers.empty?
+        # mark the company as related
+        mc_name = c_full["results"]["company"]["name"]
+        mc_address = c_full["results"]["company"]["registered_address_in_full"]
+        nodes << {id: mc_name, 
+                  label: mc_name,
+                  size: 1,
+                  color: "125,125,225",
+                  type: "related_company",
+                  opencorporates_url: c_full["results"]["company"]["opencorporates_url"]}
+
+        # add candidate officers
+        c_officers.each do |oname|
+          nodes << {id: "#{oname} (officer)", 
+                    label: oname,
+                    size: 2,
+                    color: "225,125,125",
+                    type: "related_officer",
+                    opencorporates_url: ""}
+          edges << {id: Digest::MD5.hexdigest(oname + mc_name), source: "#{oname} (officer)", target: mc_name, label: "officer of"}
+        end
+
+        matching_officers.each do |oname|
+          edges << {id: Digest::MD5.hexdigest(oname + rc_name), source: "#{oname} (officer)", target: rc_name, label: "officer of"}
+        end
+
+        # match company to address
+        edges << {id: Digest::MD5.hexdigest(mc_name + rc_postcode), source: mc_name, target: rc_postcode, label: "registered at"}
+      elsif params[:show_all]
+        # add the company anyway
+        mc_name = c_full["results"]["company"]["name"]
+        mc_address = c_full["results"]["company"]["registered_address_in_full"]
+        nodes << {id: mc_name, 
+                  label: mc_name,
+                  size: 1,
+                  color: "125,125,255",
+                  type: "company",
+                  opencorporates_url: c_full["results"]["company"]["opencorporates_url"]}
+
+        # add candidate officers
+        c_officers.each do |oname|
+          nodes << {id: "#{oname} (officer)", 
+                    label: oname,
+                    size: 2,
+                    color: "255,125,125",
+                    type: "officer",
+                    opencorporates_url: ""}
+          edges << {id: Digest::MD5.hexdigest(oname + mc_name), source: "#{oname} (officer)", target: mc_name, label: "officer of"}
+        end
+
+        # match company to address
+        edges << {id: Digest::MD5.hexdigest(mc_name + rc_postcode), source: mc_name, target: rc_postcode, label: "registered at"}
       end
 
-      # match company to address
-      edges << {id: Digest::MD5.hexdigest(mc_name + rc_postcode), source: mc_name, target: rc_postcode, label: "registered at"}
     end
   end
 
-  json_out = JSON.dump({
-    nodes: nodes.uniq {|n| n[:id] }.map {|x| x.merge(x: rand(20), y: rand(20)) },
-    edges: edges.uniq
-  })
+  nodes = nodes.uniq {|n| n[:id] }
+  edges = edges.uniq
   
+  [nodes, edges]
+end
+
+get '/' do
+  @id = params[:query] ||"OC325892"
+  erb :index
+end
+
+get '/json/:company_number' do
+  nodes, edges = nodes_and_edges_for_company(params[:company_number])
+  
+  json_out = JSON.dump({
+    nodes: nodes.map {|x| x.merge(x: rand(20), y: rand(20)).merge(color: "rgb(#{x[:color]})") },
+    edges: edges
+  })
+
   cache_control :public, max_age: (1 * 86400) # one week
   content_type :json
 
   json_out
+end
+
+get '/multi' do
+  erb :multi
+end
+
+post '/multi' do
+  @nodes = Set.new
+  @edges = Set.new
+  params[:company_numbers].split(/\n/).each do |company|
+    $stderr.puts "Processing nodes and edges for #{company}"
+    nodes, edges = nodes_and_edges_for_company(company)
+    @nodes += Array(nodes)
+    @edges += Array(edges)
+  end
+
+  puts @nodes.length
+  puts @edges.length
+
+  # prefer the related officer classifications
+  # @nodes.keep_if {|n| 
+  #   @nodes.select {|tn| tn.fetch(:id) == n[:id] }.count == 1 || n[:type] =~ /related/
+  # }
+  
+  json_out = JSON.dump({
+    nodes: @nodes.to_a.map {|x| x.merge(x: rand(20), y: rand(20)) },
+    edges: @edges.to_a
+  })
+
+  content_type :json
+
+  json_out
+end
+
+get '/csv/nodes/:company_number' do
+  nodes, edges = nodes_and_edges_for_company(params[:company_number])
+  
+  csv_out = CSV.generate do |csv|
+    csv << nodes.first.keys # adds the attributes name on the first line
+    nodes.each do |hash|
+      csv << hash.values
+    end
+  end
+
+  cache_control :public, max_age: (1 * 86400) # one week
+  content_type :csv
+
+  csv_out
+end
+
+get '/csv/edges/:company_number' do
+  nodes, edges = nodes_and_edges_for_company(params[:company_number])
+  
+  csv_out = CSV.generate do |csv|
+    csv << edges.first.keys # adds the attributes name on the first line
+    edges.each do |hash|
+      csv << hash.values
+    end
+  end
+
+  cache_control :public, max_age: (1 * 86400) # one week
+  content_type :csv
+
+  csv_out
 end
 
 get '/about' do
