@@ -96,7 +96,7 @@ def nodes_and_edges_for_company(company_number)
     return [[], []]
   end
 
-  candidate_companies_query = JSON.parse(Typhoeus::Request.get("https://api.opencorporates.com/companies/search?api_token=#{@api_key}&jurisdiction_code=gb&per_page=100&q=#{URI.encode(rc_postcode)}").body)
+  candidate_companies_query = JSON.parse(Typhoeus::Request.get("https://api.opencorporates.com/companies/search?api_token=#{@api_key}&jurisdiction_code=gb&per_page=100&registered_address=#{URI.encode(rc_postcode)}").body)
   no_pages = candidate_companies_query["results"]["total_pages"].to_i
   nodes = []
   edges = []
@@ -131,7 +131,7 @@ def nodes_and_edges_for_company(company_number)
   end
 
   (1..no_pages).each do |i|
-    candidate_companies_query = JSON.parse(Typhoeus::Request.get("https://api.opencorporates.com/companies/search?api_token=#{@api_key}&jurisdiction_code=gb&per_page=100&page=#{i}&q=#{URI.encode(rc_postcode)}").body)
+    candidate_companies_query = JSON.parse(Typhoeus::Request.get("https://api.opencorporates.com/companies/search?api_token=#{@api_key}&jurisdiction_code=gb&per_page=100&page=#{i}&registered_address=#{URI.encode(rc_postcode)}").body)
     candidate_company_results = candidate_companies_query["results"]["companies"].map {|x| x["company"] }
 
     candidate_companies = candidate_company_results.map do |c|
