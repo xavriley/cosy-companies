@@ -11,7 +11,7 @@ if memcachier_servers = ENV["MEMCACHIER_SERVERS"]
     password: ENV['MEMCACHIER_PASSWORD']
   })
   use Rack::Cache, verbose: true, metastore: @cache, entitystore: @cache
-elsif memcache_servers = ENV["MEMCACHE_SERVERS"] 
+elsif memcache_servers = ENV["MEMCACHE_SERVERS"]
   use Rack::Cache,
     verbose: true,
     metastore:   "memcached://#{memcache_servers}",
@@ -42,15 +42,15 @@ before do
   @edges = []
   @hydra = Typhoeus::Hydra.new
   @api_key = ENV['OPENC_API_KEY']
-  headers 'Access-Control-Allow-Origin' => '*', 
-    'Access-Control-Allow-Methods' => ['OPTIONS', 'GET', 'POST'] 
+  headers 'Access-Control-Allow-Origin' => '*',
+    'Access-Control-Allow-Methods' => ['OPTIONS', 'GET', 'POST']
 end
 
 def get_address(company_results)
   if address = company_results["results"]["company"]["registered_address_in_full"]
     address
   elsif address = company_results["results"]["company"]["data"]["most_recent"].select {|datum| datum["data_type"] == "CompanyAddress" }.first
-    address["description"] 
+    address["description"]
   end
 end
 
@@ -100,7 +100,7 @@ def nodes_and_edges_for_company(company_number)
   no_pages = candidate_companies_query["results"]["total_pages"].to_i
   nodes = []
   edges = []
-  nodes << {id: rc_name, 
+  nodes << {id: rc_name,
             label: rc_name,
             size: 3,
             color: "125,125,225",
@@ -109,7 +109,7 @@ def nodes_and_edges_for_company(company_number)
         }
 
   # add root company and postcode
-  nodes << {id: rc_postcode, 
+  nodes << {id: rc_postcode,
             label: rc_postcode,
             size: 5,
             color: "125,255,125",
@@ -117,10 +117,10 @@ def nodes_and_edges_for_company(company_number)
             opencorporates_url: ""
         }
   edges << {id: Digest::MD5.hexdigest(rc_name + rc_postcode), source: rc_name, target: rc_postcode, label: "registered at"}
-  
+
   # add root officers
   rc_officer_names.each do |oname|
-    nodes << {id: "#{oname} (officer)", 
+    nodes << {id: "#{oname} (officer)",
               label: oname,
               size: 2,
               color: "255,125,125",
@@ -155,7 +155,7 @@ def nodes_and_edges_for_company(company_number)
         # mark the company as related
         mc_name = c_full["results"]["company"]["name"]
         mc_address = c_full["results"]["company"]["registered_address_in_full"]
-        nodes << {id: mc_name, 
+        nodes << {id: mc_name,
                   label: mc_name,
                   size: 1,
                   color: "125,125,225",
@@ -164,7 +164,7 @@ def nodes_and_edges_for_company(company_number)
 
         # add candidate officers
         c_officers.each do |oname|
-          nodes << {id: "#{oname} (officer)", 
+          nodes << {id: "#{oname} (officer)",
                     label: oname,
                     size: 2,
                     color: "225,125,125",
@@ -183,7 +183,7 @@ def nodes_and_edges_for_company(company_number)
         # add the company anyway
         mc_name = c_full["results"]["company"]["name"]
         mc_address = c_full["results"]["company"]["registered_address_in_full"]
-        nodes << {id: mc_name, 
+        nodes << {id: mc_name,
                   label: mc_name,
                   size: 1,
                   color: "125,125,255",
@@ -192,7 +192,7 @@ def nodes_and_edges_for_company(company_number)
 
         # add candidate officers
         c_officers.each do |oname|
-          nodes << {id: "#{oname} (officer)", 
+          nodes << {id: "#{oname} (officer)",
                     label: oname,
                     size: 2,
                     color: "255,125,125",
@@ -210,7 +210,7 @@ def nodes_and_edges_for_company(company_number)
 
   nodes = nodes.uniq {|n| n[:id] }
   edges = edges.uniq
-  
+
   [nodes, edges]
 end
 
@@ -221,7 +221,7 @@ end
 
 get '/json/:company_number' do
   nodes, edges = nodes_and_edges_for_company(params[:company_number])
-  
+
   json_out = JSON.dump({
     nodes: nodes.map {|x| x.merge(x: rand(20), y: rand(20)).merge(color: "rgb(#{x[:color]})") },
     edges: edges
@@ -251,10 +251,10 @@ post '/multi' do
   puts @edges.length
 
   # prefer the related officer classifications
-  # @nodes.keep_if {|n| 
+  # @nodes.keep_if {|n|
   #   @nodes.select {|tn| tn.fetch(:id) == n[:id] }.count == 1 || n[:type] =~ /related/
   # }
-  
+
   json_out = JSON.dump({
     nodes: @nodes.to_a.map {|x| x.merge(x: rand(20), y: rand(20)) },
     edges: @edges.to_a
@@ -267,7 +267,7 @@ end
 
 get '/csv/nodes/:company_number' do
   nodes, edges = nodes_and_edges_for_company(params[:company_number])
-  
+
   csv_out = CSV.generate do |csv|
     csv << nodes.first.keys # adds the attributes name on the first line
     nodes.each do |hash|
@@ -283,7 +283,7 @@ end
 
 get '/csv/edges/:company_number' do
   nodes, edges = nodes_and_edges_for_company(params[:company_number])
-  
+
   csv_out = CSV.generate do |csv|
     csv << edges.first.keys # adds the attributes name on the first line
     edges.each do |hash|
