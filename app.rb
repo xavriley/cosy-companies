@@ -52,6 +52,8 @@ def get_address(company_results)
   elsif address = company_results["results"]["company"]["data"]["most_recent"].select {|datum| datum["data_type"] == "CompanyAddress" }.first
     address["description"]
   end
+rescue
+  ""
 end
 
 def get_officer_names(company_results)
@@ -236,7 +238,8 @@ def nodes_and_edges_for_company(company_number)
 end
 
 get '/' do
-  @id = params[:query] ||"OC325892"
+  params[:query] ||= "OC325892"
+  @id = params[:query]
   erb :index
 end
 
@@ -296,6 +299,7 @@ get '/csv/nodes/:company_number' do
     end
   end
 
+  response['Content-Disposition'] = "attachment; filename=\"#{params[:company_number]}-entities.csv\""
   cache_control :public, max_age: (1 * 86400) # one week
   content_type :csv
 
@@ -312,6 +316,7 @@ get '/csv/edges/:company_number' do
     end
   end
 
+  response['Content-Disposition'] = "attachment; filename=\"#{params[:company_number]}-connections.csv\""
   cache_control :public, max_age: (1 * 86400) # one week
   content_type :csv
 
