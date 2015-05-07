@@ -55,7 +55,7 @@ def get_address(company_results)
 end
 
 def get_officer_names(company_results)
-  Array(company_results["results"]["company"]["officers"]).map {|x| x["officer"]["name"].strip }
+  Array(company_results["results"]["company"]["officers"]).map {|x| {id: x["officer"]["id"], name: x["officer"]["name"].strip, dob: x["officer"]["date_of_birth"]} }
 end
 
 def get_name(company_results)
@@ -119,15 +119,15 @@ def nodes_and_edges_for_company(company_number)
   edges << {id: Digest::MD5.hexdigest(rc_name + rc_postcode), source: rc_name, target: rc_postcode, label: "registered at"}
 
   # add root officers
-  rc_officer_names.each do |oname|
-    nodes << {id: "#{oname} (officer)",
-              label: oname,
+  rc_officer_names.each do |o|
+    nodes << {id: "#{o[:name]} (officer)",
+              label: o[:name],
               size: 2,
               color: "255,125,125",
               type: "officer",
-              opencorporates_url: ""
+              opencorporates_url: "https://opencorporates.com/officers/#{o[:id]}"
               }
-    edges << {id: Digest::MD5.hexdigest(oname + rc_name), source: "#{oname} (officer)", target: rc_name, label: "officer of"}
+    edges << {id: Digest::MD5.hexdigest(o[:name] + rc_name), source: "#{o[:name]} (officer)", target: rc_name, label: "officer of"}
   end
 
   (1..no_pages).each do |i|
@@ -141,16 +141,37 @@ def nodes_and_edges_for_company(company_number)
 
     @hydra.run
 
+    # Check for corporate officers
     candidate_companies.map {|r|
       JSON.parse(r.response.body)
     }.each do |c_full|
+      c_officers = get_officer_names(c_full)
+      c_officers.each {|c|
+        if c[:dob].nil?
+          candidate_companies_query = JSON.parse(Typhoeus::Request.get("https://api.opencorporates.com/companies/search?api_token=#{@api_key}&jurisdiction_code=gb&per_page=100&page=#{i}&q=#{URI.encode(c[:name])}").body)
+          candidate_company = candidate_companies_query["results"]["companies"].detect {|x| x["company"]["name"] == c[:name] }
+
+          next if candidate_company.nil?
+
+          candidate_company = candidate_company["company"]
+          c_full_url = "http://api.opencorporates.com/companies/#{candidate_company['jurisdiction_code']}/#{candidate_company['company_number']}?api_token=#{@api_key}"
+          candidate_companies << queue_get(c_full_url)
+        end
+      }
+    end
+
+    @hydra.run
+
+    candidate_companies.map {|r|
+      JSON.parse(r.response.body)
+    }.each do |c_full|
+      next if c_full["error"]
       next if c_full["results"]["company"]["name"] == rc_name
 
       c_address = get_address(c_full)
       c_officers = get_officer_names(c_full)
 
-
-      matching_officers = rc_officer_names & c_officers
+      matching_officers = rc_officer_names.map{|x| x[:name]} & c_officers.map{|x| x[:name] }
       if !matching_officers.empty?
         # mark the company as related
         mc_name = c_full["results"]["company"]["name"]
@@ -163,14 +184,14 @@ def nodes_and_edges_for_company(company_number)
                   opencorporates_url: c_full["results"]["company"]["opencorporates_url"]}
 
         # add candidate officers
-        c_officers.each do |oname|
-          nodes << {id: "#{oname} (officer)",
-                    label: oname,
+        c_officers.each do |c|
+          nodes << {id: "#{c[:name]} (officer)",
+                    label: c[:name],
                     size: 2,
                     color: "225,125,125",
                     type: "related_officer",
-                    opencorporates_url: ""}
-          edges << {id: Digest::MD5.hexdigest(oname + mc_name), source: "#{oname} (officer)", target: mc_name, label: "officer of"}
+                    opencorporates_url: "https://opencorporates.com/officers/#{c[:id]}"}
+          edges << {id: Digest::MD5.hexdigest(c[:name] + mc_name), source: "#{c[:name]} (officer)", target: mc_name, label: "officer of"}
         end
 
         matching_officers.each do |oname|
